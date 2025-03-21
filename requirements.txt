@@ -1,0 +1,5 @@
+Flask
+yfinance
+requests
+plotly
+flask_socketio

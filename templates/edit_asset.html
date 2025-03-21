@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Edit Asset</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-left">
+      <a href="{{ url_for('portfolio_dashboard') }}" class="brand">&larr; Back to Dashboard</a>
+    </div>
+    <div class="navbar-right">
+      <h1 class="brand">Edit {{ asset.symbol }}</h1>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="container">
+    <!-- Form Card -->
+    <div class="form-card">
+      <h2 class="form-title">Update Average Price</h2>
+      <form method="POST" class="asset-form">
+        <div class="form-group">
+          <label for="avg_price">New Average Price</label>
+          <input 
+            type="number" 
+            step="0.01" 
+            id="avg_price" 
+            name="avg_price" 
+            placeholder="e.g. 150.00" 
+            value="{{ asset.avg_price }}" 
+            required
+          />
+        </div>
+        <button type="submit" class="btn-primary btn-fullwidth">Save Changes</button>
+      </form>
+    </div>
+  </main>
+</body>
+</html>
