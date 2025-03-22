@@ -7,6 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, current_user, login_required, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
+import time 
 
 # --------------------------
 # App & Extensions Setup
@@ -39,6 +40,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     alert_threshold = db.Column(db.Float, default=10.0)  # Users can set their own threshold
+    assets = db.relationship('Asset', backref='user', lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -61,7 +63,7 @@ class Asset(db.Model):
 # --------------------------
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 # --------------------------
 # Helper Functions
@@ -103,32 +105,17 @@ def send_email_alert(user, asset):
 # Background Price Updater
 # --------------------------
 def update_portfolio_prices():
-    while True:
-        users = User.query.all()
-        for user in users:
-            user_assets = Asset.query.filter_by(user_id=user.id).all()
-            updated = False
-            for asset in user_assets:
-                info = get_asset_info(asset.symbol, asset.currency)
-                if info:
-                    asset.current_price = info['current_price']
-                    asset.percentage = round(((asset.current_price - asset.avg_price) / asset.avg_price) * 100, 2)
-                    # Check against the user's alert threshold
-                    if asset.percentage >= user.alert_threshold and not asset.alerted:
-                        send_email_alert(user, asset)
-                        asset.alerted = True
-                    if asset.percentage < user.alert_threshold:
-                        asset.alerted = False
-                    updated = True
-            if updated:
-                db.session.commit()
-                # Emit update for each user’s portfolio (for simplicity, we broadcast all assets)
-                all_assets = Asset.query.all()
-                data = [ { 'symbol': a.symbol, 'current_price': a.current_price, 'avg_price': a.avg_price,
-                           'percentage': a.percentage, 'currency': a.currency, 'user_id': a.user_id }
-                         for a in all_assets ]
-                socketio.emit('update_prices', data)
-        socketio.sleep(10)  # Update every 10 seconds
+    with app.app_context():
+        while True:
+            users = User.query.all()
+            for user in users:
+                for asset in user.assets:
+                    info = get_asset_info(asset.symbol, asset.currency)
+                    if info:
+                        asset.current_price = info['current_price']
+                        asset.percentage = round(((asset.current_price - asset.avg_price) / asset.avg_price) * 100, 2)
+            db.session.commit()
+            time.sleep(60)  # wait 1 minute before next update
 
 threading.Thread(target=update_portfolio_prices, daemon=True).start()
 
@@ -198,14 +185,16 @@ def change_password():
 @login_required
 def portfolio_dashboard():
     assets = Asset.query.filter_by(user_id=current_user.id).all()
-    total_value = sum(a.current_price for a in assets) if assets else 0
-    best_performer = max(assets, key=lambda a: a.percentage, default=None)
-    worst_performer = min(assets, key=lambda a: a.percentage, default=None)
-    return render_template('index.html',
-                           portfolio=assets,
-                           total_value=round(total_value, 2),
-                           best_performer=best_performer,
-                           worst_performer=worst_performer)
+    portfolio = [
+        {
+            'symbol': asset.symbol,
+            'avg_price': float(asset.avg_price),
+            'current_price': float(asset.current_price),
+            'currency': asset.currency,
+            'percentage': float(asset.percentage)
+        } for asset in assets
+    ]
+    return render_template('index.html', portfolio=portfolio)
 
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
@@ -214,20 +203,28 @@ def add_asset():
         symbol = request.form['symbol'].upper()
         avg_price = float(request.form['avg_price'])
         currency = request.form['currency'].upper()
+
+        existing_asset = Asset.query.filter_by(symbol=symbol, user_id=current_user.id).first()
+        if existing_asset:
+            flash("Asset already exists in your portfolio!", "warning")
+            return redirect(url_for('add_asset'))
+
         info = get_asset_info(symbol, currency)
         if info:
-            asset = Asset(symbol=symbol,
-                          avg_price=avg_price,
-                          current_price=info['current_price'],
-                          currency=currency,
-                          percentage=round(((info['current_price'] - avg_price) / avg_price) * 100, 2),
-                          user_id=current_user.id,
-                          alerted=False)
+            asset = Asset(
+                symbol=symbol,
+                avg_price=avg_price,
+                current_price=info['current_price'],
+                currency=currency,
+                percentage=round(((info['current_price'] - avg_price) / avg_price) * 100, 2),
+                user_id=current_user.id,
+                alerted=False
+            )
             db.session.add(asset)
             db.session.commit()
             return redirect(url_for('portfolio_dashboard'))
         else:
-            flash("Invalid asset! Try again.")
+            flash("Invalid asset! Try again.", "danger")
             return redirect(url_for('add_asset'))
     return render_template('add_asset.html')
 
