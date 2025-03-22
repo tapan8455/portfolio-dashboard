@@ -5,27 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>My Portfolio</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <!-- Plotly for charts -->
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-  <!-- Socket.IO for live updates -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.1/socket.io.js"></script>
+  <style>
+    .green-highlight { background-color: #e6f4ea; }
+    .red-highlight { background-color: #fcebea; }
+    .threshold-form { margin: 1rem 0; }
+    .threshold-form input { margin: 0 0.5rem; width: 80px; }
+  </style>
 </head>
 <body>
-  <!-- Top Navigation -->
-   <nav class="navbar">
-  <div class="navbar-left">
-    <h1 class="brand">My Portfolio</h1>
-  </div>
-  <div class="navbar-right">
-    <a href="{{ url_for('add_asset') }}" class="btn-primary">+ Add Asset</a>
-    <!-- Add a logout link -->
-    <a href="{{ url_for('logout') }}" class="btn-secondary">Logout</a>
-  </div>
+  <nav class="navbar">
+    <div class="navbar-left">
+      <h1 class="brand">My Portfolio</h1>
+    </div>
+    <div class="navbar-right">
+      <a href="{{ url_for('add_asset') }}" class="btn-primary">+ Add Asset</a>
+      <a href="{{ url_for('logout') }}" class="btn-secondary">Logout</a>
+    </div>
   </nav>
 
-  <!-- Main Container: Left side (assets) + Right side (graph/detail) -->
   <main class="master-detail-container">
-    <!-- Left Column: Asset List -->
     <section class="asset-list">
       <div class="portfolio-header">
         <h2>Total Value: $<span id="total-value">{{ total_value }}</span></h2>
@@ -35,6 +35,15 @@
         <p class="performer-label">Worst Performer: 
           <span id="worst-performer">{{ worst_performer.symbol if worst_performer else 'N/A' }}</span>
         </p>
+
+        <!-- Threshold Form -->
+        <form class="threshold-form" method="POST" action="{{ url_for('update_threshold') }}">
+          <label>Green Threshold (%):</label>
+          <input type="number" step="0.1" name="positive_threshold" value="{{ current_user.alert_threshold }}">
+          <label>Red Threshold (%):</label>
+          <input type="number" step="0.1" name="negative_threshold" value="{{ current_user.negative_threshold }}">
+          <button type="submit">Update</button>
+        </form>
       </div>
 
       <div class="asset-rows">
@@ -42,16 +51,11 @@
           <div class="asset-row" onclick="selectAsset('{{ asset.symbol }}')">
             <div class="asset-info">
               <h3>{{ asset.symbol }}</h3>
-              <!-- Edit button: Clicking it stops propagation so the row's click event doesn't fire -->
-              
-              <p class="small-text">
-                {{ asset.currency }} {{ asset.current_price }}
-              </p>
+              <p class="small-text">{{ asset.currency }} {{ asset.current_price }}</p>
             </div>
             <div class="asset-actions">
               <a href="{{ url_for('edit_asset', symbol=asset.symbol) }}" class="edit-link" onclick="event.stopPropagation();">Edit</a>
-              <!-- Delete form -->
-              <form action="{{ url_for('delete_asset', symbol=asset.symbol) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this asset?');" style="display:inline;">
+              <form action="{{ url_for('delete_asset', symbol=asset.symbol) }}" method="POST" onsubmit="return confirm('Are you sure?');" style="display:inline;">
                 <button type="submit" class="delete-btn" onclick="event.stopPropagation();">Delete</button>
               </form>
             </div>
@@ -65,15 +69,12 @@
       </div>
     </section>
 
-    <!-- Right Column: Detailed View & Large Graph -->
     <section class="detail-view">
-      <!-- Placeholder content if no asset is selected -->
       <div id="detail-placeholder" class="detail-placeholder">
         <h2>Select an Asset</h2>
         <p>Click on an asset in the list to view its graph and details here.</p>
       </div>
 
-      <!-- Once an asset is selected, show the detail container -->
       <div id="detail-container" class="detail-container hidden">
         <h2 id="detail-symbol"></h2>
         <p id="detail-price"></p>
@@ -92,96 +93,79 @@
 
   <script src="{{ url_for('static', filename='js/graphs.js') }}"></script>
   <script>
-    var socket = io();
-    var portfolioData = {{ portfolio|tojson }};
-    var selectedSymbol = null;
-    // Global object to keep track of which assets have already been alerted
-    var alertedSymbols = {};
-  
+    const socket = io();
+    let portfolioData = {{ portfolio|tojson }};
+    let selectedSymbol = null;
+    const userPositiveThreshold = {{ current_user.alert_threshold }};
+    const userNegativeThreshold = {{ current_user.negative_threshold }};
+
     socket.on('update_prices', function(data) {
-  // Update total value
-  let totalVal = data.reduce((sum, asset) => sum + asset.current_price, 0).toFixed(2);
-  document.getElementById('total-value').textContent = totalVal;
+      const totalVal = data.reduce((sum, a) => sum + a.current_price, 0).toFixed(2);
+      document.getElementById('total-value').textContent = totalVal;
 
-  // Update best/worst performer
-  if (data.length > 0) {
-    let best = data.reduce((a, b) => a.percentage > b.percentage ? a : b);
-    let worst = data.reduce((a, b) => a.percentage < b.percentage ? a : b);
-    document.getElementById('best-performer').textContent = best.symbol;
-    document.getElementById('worst-performer').textContent = worst.symbol;
-  } else {
-    document.getElementById('best-performer').textContent = 'N/A';
-    document.getElementById('worst-performer').textContent = 'N/A';
-  }
+      if (data.length > 0) {
+        let best = data.reduce((a, b) => a.percentage > b.percentage ? a : b);
+        let worst = data.reduce((a, b) => a.percentage < b.percentage ? a : b);
+        document.getElementById('best-performer').textContent = best.symbol;
+        document.getElementById('worst-performer').textContent = worst.symbol;
+      } else {
+        document.getElementById('best-performer').textContent = 'N/A';
+        document.getElementById('worst-performer').textContent = 'N/A';
+      }
 
-  // Update local data
-  portfolioData = data;
+      portfolioData = data;
 
-  // Update list UI for each asset row
-  let assetRows = document.querySelectorAll('.asset-row');
-  assetRows.forEach((row, idx) => {
-    let symbol = data[idx].symbol;
-    let price = data[idx].current_price;
-    let percent = data[idx].percentage;
-    
-    // Update the small text with currency and price
-    row.querySelector('.small-text').textContent = data[idx].currency + ' ' + price;
-    
-    // Update the percentage element
-    let percentEl = row.querySelector('.percentage');
-    percentEl.textContent = percent + '%';
-    percentEl.classList.toggle('positive', percent >= 0);
-    percentEl.classList.toggle('negative', percent < 0);
-    
-    // Set border color based on percentage change
-    if (percent >= 10) {
-      row.style.border = "2px solid #28a745"; // green border
-    } else if (percent <= -5) {
-      row.style.border = "2px solid #dc3545"; // red border
-    } else {
-      row.style.border = ""; // reset to default (or set a default border here if needed)
-    }
-  });
+      const assetRows = document.querySelectorAll('.asset-row');
+      assetRows.forEach((row, idx) => {
+        const asset = data[idx];
+        const percent = asset.percentage;
+        row.querySelector('.small-text').textContent = asset.currency + ' ' + asset.current_price;
+        const percentEl = row.querySelector('.percentage');
+        percentEl.textContent = percent + '%';
+        percentEl.classList.toggle('positive', percent >= 0);
+        percentEl.classList.toggle('negative', percent < 0);
 
-  // If an asset is selected, update detail view
-  if (selectedSymbol) {
-    let asset = data.find(a => a.symbol === selectedSymbol);
-    if (asset) updateDetailView(asset);
-  }
-});
+        // Apply threshold-based row highlighting
+        row.classList.remove('green-highlight', 'red-highlight');
+        if (percent >= userPositiveThreshold) {
+          row.classList.add('green-highlight');
+        } else if (percent <= userNegativeThreshold) {
+          row.classList.add('red-highlight');
+        }
+      });
 
-  
-    // Called when user clicks on an asset row
+      if (selectedSymbol) {
+        const asset = data.find(a => a.symbol === selectedSymbol);
+        if (asset) updateDetailView(asset);
+      }
+    });
+
     function selectAsset(symbol) {
       selectedSymbol = symbol;
-      let asset = portfolioData.find(a => a.symbol === symbol);
+      const asset = portfolioData.find(a => a.symbol === symbol);
       if (asset) {
         document.getElementById('detail-placeholder').classList.add('hidden');
         document.getElementById('detail-container').classList.remove('hidden');
         updateDetailView(asset);
-        // Default graph period
         updateGraph(symbol, '1mo', 'detail-graph');
       }
     }
-  
-    // Updates detail text for the selected asset
+
     function updateDetailView(asset) {
       document.getElementById('detail-symbol').textContent = asset.symbol;
       document.getElementById('detail-price').textContent = `Price: $${asset.current_price} ${asset.currency}`;
       document.getElementById('detail-avg').textContent = `Avg Price: $${asset.avg_price}`;
-      let changeEl = document.getElementById('detail-change');
+      const changeEl = document.getElementById('detail-change');
       changeEl.textContent = `Change: ${asset.percentage}%`;
       changeEl.classList.toggle('positive', asset.percentage >= 0);
       changeEl.classList.toggle('negative', asset.percentage < 0);
     }
-  
-    // Called by the time-range buttons in detail view
+
     function updateSelectedGraph(period) {
       if (selectedSymbol) {
         updateGraph(selectedSymbol, period, 'detail-graph');
       }
     }
   </script>
-  
 </body>
 </html>

@@ -40,6 +40,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     alert_threshold = db.Column(db.Float, default=10.0)  # Users can set their own threshold
+    negative_threshold = db.Column(db.Float, default=-5.0)
     assets = db.relationship('Asset', backref='user', lazy=True)
 
     def set_password(self, password):
@@ -195,6 +196,20 @@ def portfolio_dashboard():
         } for asset in assets
     ]
     return render_template('index.html', portfolio=portfolio)
+
+@app.route('/update_threshold', methods=['POST'])
+@login_required
+def update_threshold():
+    try:
+        pos = float(request.form['positive_threshold'])
+        neg = float(request.form['negative_threshold'])
+        current_user.alert_threshold = pos
+        current_user.negative_threshold = neg
+        db.session.commit()
+        flash("Thresholds updated successfully.", "success")
+    except Exception as e:
+        flash(f"Failed to update thresholds: {e}", "danger")
+    return redirect(url_for('portfolio_dashboard'))
 
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
