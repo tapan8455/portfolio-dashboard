@@ -12,13 +12,15 @@
 </head>
 <body>
   <!-- Top Navigation -->
-  <nav class="navbar">
-    <div class="navbar-left">
-      <h1 class="brand">My Portfolio</h1>
-    </div>
-    <div class="navbar-right">
-      <a href="{{ url_for('add_asset') }}" class="btn-primary">+ Add Asset</a>
-    </div>
+   <nav class="navbar">
+  <div class="navbar-left">
+    <h1 class="brand">My Portfolio</h1>
+  </div>
+  <div class="navbar-right">
+    <a href="{{ url_for('add_asset') }}" class="btn-primary">+ Add Asset</a>
+    <!-- Add a logout link -->
+    <a href="{{ url_for('logout') }}" class="btn-secondary">Logout</a>
+  </div>
   </nav>
 
   <!-- Main Container: Left side (assets) + Right side (graph/detail) -->
