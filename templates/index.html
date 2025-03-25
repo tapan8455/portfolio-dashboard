@@ -7,165 +7,90 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.1/socket.io.js"></script>
-  <style>
-    .green-highlight { background-color: #e6f4ea; }
-    .red-highlight { background-color: #fcebea; }
-    .threshold-form { margin: 1rem 0; }
-    .threshold-form input { margin: 0 0.5rem; width: 80px; }
-  </style>
 </head>
 <body>
-  <nav class="navbar">
-    <div class="navbar-left">
-      <h1 class="brand">My Portfolio</h1>
+
+<nav class="navbar">
+  <div class="navbar-left">
+    <h1 class="brand">My Portfolio</h1>
+  </div>
+  <div class="navbar-right">
+    <a href="{{ url_for('add_asset') }}" class="btn-primary">+ Add Asset</a>
+    <a href="{{ url_for('change_password') }}" class="btn-secondary">Change Password</a>
+    <a href="{{ url_for('logout') }}" class="btn-secondary">Logout</a>
+  </div>
+</nav>
+
+<main class="master-detail-container">
+  <section class="asset-list">
+    <div class="portfolio-header">
+      <h2>Total Value: $<span id="total-value">0</span></h2>
+      <p>Best Performer: <span id="best-performer">N/A</span></p>
+      <p>Worst Performer: <span id="worst-performer">N/A</span></p>
+
+      <form method="POST" action="{{ url_for('update_threshold') }}">
+        <label>Green Threshold</label>
+        <input type="number" step="0.1" name="positive_threshold" value="{{ current_user.alert_threshold }}">
+        <label>Red Threshold</label>
+        <input type="number" step="0.1" name="negative_threshold" value="{{ current_user.negative_threshold }}">
+        <button type="submit">Update</button>
+      </form>
     </div>
-    <div class="navbar-right">
-      <a href="{{ url_for('add_asset') }}" class="btn-primary">+ Add Asset</a>
-      <a href="{{ url_for('logout') }}" class="btn-secondary">Logout</a>
-    </div>
-  </nav>
 
-  <main class="master-detail-container">
-    <section class="asset-list">
-      <div class="portfolio-header">
-        <h2>Total Value: $<span id="total-value">{{ total_value }}</span></h2>
-        <p class="performer-label">Best Performer: 
-          <span id="best-performer">{{ best_performer.symbol if best_performer else 'N/A' }}</span>
-        </p>
-        <p class="performer-label">Worst Performer: 
-          <span id="worst-performer">{{ worst_performer.symbol if worst_performer else 'N/A' }}</span>
-        </p>
-
-        <!-- Threshold Form -->
-        <form class="threshold-form" method="POST" action="{{ url_for('update_threshold') }}">
-          <label>Green Threshold (%):</label>
-          <input type="number" step="0.1" name="positive_threshold" value="{{ current_user.alert_threshold }}">
-          <label>Red Threshold (%):</label>
-          <input type="number" step="0.1" name="negative_threshold" value="{{ current_user.negative_threshold }}">
-          <button type="submit">Update</button>
-        </form>
-      </div>
-
-      <div class="asset-rows">
-        {% for asset in portfolio %}
-          <div class="asset-row" onclick="selectAsset('{{ asset.symbol }}')">
-            <div class="asset-info">
-              <h3>{{ asset.symbol }}</h3>
-              <p class="small-text">{{ asset.currency }} {{ asset.current_price }}</p>
-            </div>
-            <div class="asset-actions">
-              <a href="{{ url_for('edit_asset', symbol=asset.symbol) }}" class="edit-link" onclick="event.stopPropagation();">Edit</a>
-              <form action="{{ url_for('delete_asset', symbol=asset.symbol) }}" method="POST" onsubmit="return confirm('Are you sure?');" style="display:inline;">
-                <button type="submit" class="delete-btn" onclick="event.stopPropagation();">Delete</button>
-              </form>
-            </div>
-            <div class="asset-change">
-              <p class="percentage {{ 'positive' if asset.percentage >= 0 else 'negative' }}">
-                {{ asset.percentage }}%
-              </p>
-            </div>
+    <div class="asset-rows">
+      {% for asset in portfolio %}
+      <div class="asset-row {% if asset.highlight == 'green' %}highlight-green{% elif asset.highlight == 'red' %}highlight-red{% endif %}" onclick="selectAsset('{{ asset.symbol }}')">
+          <div class="asset-info">
+            <h3>{{ asset.symbol }}</h3>
+            <p class="small-text">{{ asset.currency }} {{ asset.current_price }}</p>
           </div>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="detail-view">
-      <div id="detail-placeholder" class="detail-placeholder">
-        <h2>Select an Asset</h2>
-        <p>Click on an asset in the list to view its graph and details here.</p>
-      </div>
-
-      <div id="detail-container" class="detail-container hidden">
-        <h2 id="detail-symbol"></h2>
-        <p id="detail-price"></p>
-        <p id="detail-avg"></p>
-        <p id="detail-change"></p>
-
-        <div class="time-range">
-          <button class="btn-secondary" onclick="updateSelectedGraph('1mo')">1M</button>
-          <button class="btn-secondary" onclick="updateSelectedGraph('6mo')">6M</button>
-          <button class="btn-secondary" onclick="updateSelectedGraph('1y')">1Y</button>
+          <div class="asset-actions">
+            <button class="edit-btn">
+            <a href="{{ url_for('edit_asset', symbol=asset.symbol) }}" onclick="event.stopPropagation();">Edit</a></button>
+            <form action="{{ url_for('delete_asset', symbol=asset.symbol) }}" method="POST" onsubmit="return confirm('Delete this asset?');">
+              <button class="delete-btn" type="submit" onclick="event.stopPropagation();">Delete</button>
+            </form>
+          </div>
+          <div class="asset-change">
+            <p class="percentage {{ 'positive' if asset.percentage >= 0 else 'negative' }}">
+              {{ asset.percentage }}%
+            </p>
+          </div>
         </div>
-        <div id="detail-graph" class="detail-graph"></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="detail-view">
+    <div id="detail-placeholder" class="detail-placeholder">
+      <h2>Select an Asset</h2>
+      <p>Click on an asset to view its graph and performance.</p>
+    </div>
+
+    <div id="detail-container" class="detail-container hidden">
+      <h2 id="detail-symbol"></h2>
+      <p id="detail-price"></p>
+      <p id="detail-avg"></p>
+      <p id="detail-change"></p>
+
+      <div class="time-range">
+        <button onclick="updateSelectedGraph('1mo')">1M</button>
+        <button onclick="updateSelectedGraph('6mo')">6M</button>
+        <button onclick="updateSelectedGraph('1y')">1Y</button>
       </div>
-    </section>
-  </main>
 
-  <script src="{{ url_for('static', filename='js/graphs.js') }}"></script>
-  <script>
-    const socket = io();
-    let portfolioData = {{ portfolio|tojson }};
-    let selectedSymbol = null;
-    const userPositiveThreshold = {{ current_user.alert_threshold }};
-    const userNegativeThreshold = {{ current_user.negative_threshold }};
+      <div id="detail-graph" class="detail-graph"></div>
+    </div>
+  </section>
+</main>
 
-    socket.on('update_prices', function(data) {
-      const totalVal = data.reduce((sum, a) => sum + a.current_price, 0).toFixed(2);
-      document.getElementById('total-value').textContent = totalVal;
-
-      if (data.length > 0) {
-        let best = data.reduce((a, b) => a.percentage > b.percentage ? a : b);
-        let worst = data.reduce((a, b) => a.percentage < b.percentage ? a : b);
-        document.getElementById('best-performer').textContent = best.symbol;
-        document.getElementById('worst-performer').textContent = worst.symbol;
-      } else {
-        document.getElementById('best-performer').textContent = 'N/A';
-        document.getElementById('worst-performer').textContent = 'N/A';
-      }
-
-      portfolioData = data;
-
-      const assetRows = document.querySelectorAll('.asset-row');
-      assetRows.forEach((row, idx) => {
-        const asset = data[idx];
-        const percent = asset.percentage;
-        row.querySelector('.small-text').textContent = asset.currency + ' ' + asset.current_price;
-        const percentEl = row.querySelector('.percentage');
-        percentEl.textContent = percent + '%';
-        percentEl.classList.toggle('positive', percent >= 0);
-        percentEl.classList.toggle('negative', percent < 0);
-
-        // Apply threshold-based row highlighting
-        row.classList.remove('green-highlight', 'red-highlight');
-        if (percent >= userPositiveThreshold) {
-          row.classList.add('green-highlight');
-        } else if (percent <= userNegativeThreshold) {
-          row.classList.add('red-highlight');
-        }
-      });
-
-      if (selectedSymbol) {
-        const asset = data.find(a => a.symbol === selectedSymbol);
-        if (asset) updateDetailView(asset);
-      }
-    });
-
-    function selectAsset(symbol) {
-      selectedSymbol = symbol;
-      const asset = portfolioData.find(a => a.symbol === symbol);
-      if (asset) {
-        document.getElementById('detail-placeholder').classList.add('hidden');
-        document.getElementById('detail-container').classList.remove('hidden');
-        updateDetailView(asset);
-        updateGraph(symbol, '1mo', 'detail-graph');
-      }
-    }
-
-    function updateDetailView(asset) {
-      document.getElementById('detail-symbol').textContent = asset.symbol;
-      document.getElementById('detail-price').textContent = `Price: $${asset.current_price} ${asset.currency}`;
-      document.getElementById('detail-avg').textContent = `Avg Price: $${asset.avg_price}`;
-      const changeEl = document.getElementById('detail-change');
-      changeEl.textContent = `Change: ${asset.percentage}%`;
-      changeEl.classList.toggle('positive', asset.percentage >= 0);
-      changeEl.classList.toggle('negative', asset.percentage < 0);
-    }
-
-    function updateSelectedGraph(period) {
-      if (selectedSymbol) {
-        updateGraph(selectedSymbol, period, 'detail-graph');
-      }
-    }
-  </script>
+<script>
+  const socket = io();
+  const userPositiveThreshold = {{ current_user.alert_threshold }};
+  const userNegativeThreshold = {{ current_user.negative_threshold }};
+  let portfolioData = {{ portfolio|tojson }};
+  let selectedSymbol = null;
+</script>
+<script src="{{ url_for('static', filename='js/graphs.js') }}"></script>
 </body>
 </html>
