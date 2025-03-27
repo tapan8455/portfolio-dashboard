@@ -6,3 +6,4 @@ flask_socketio
 flask_login
 flask_mail
 eventlet
+flask_sqlalchemy
